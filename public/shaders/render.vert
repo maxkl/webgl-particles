@@ -6,7 +6,6 @@ attribute vec2 dataLocation;
 
 void main() {
 	vec4 particle = texture2D(physicsData, dataLocation);
-	float perspective = 1.0 + particle.z * 5.5;
-	gl_Position = vec4(particle.xyz, perspective);
+	gl_Position = vec4(particle.xy, 0, 1);
 	gl_PointSize = 1.0;
 }

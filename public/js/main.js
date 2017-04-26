@@ -24,8 +24,6 @@
 	var framebuffer;
 	var physicsInputTexture, physicsOutputTexture;
 
-	var requestedDump = false;
-
 	function updateParticles() {
 		// Update particles
 		gl.useProgram(physicsProgram.glProgram);
@@ -66,18 +64,6 @@
 		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, physicsInputTexture, 0);
 
 		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-
-		if(requestedDump) {
-			requestedDump = false;
-
-			if(gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE) {
-				var pixels = new Float32Array(4 * PARTICLE_DATA_WIDTH * PARTICLE_DATA_HEIGHT);
-				gl.readPixels(0, 0, PARTICLE_DATA_WIDTH, PARTICLE_DATA_HEIGHT, gl.RGBA, gl.FLOAT, pixels);
-				console.log(pixels);
-			} else {
-				console.error('Reading from framebuffer not supported');
-			}
-		}
 
 		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 	}
@@ -200,11 +186,9 @@
 				var index = y * PARTICLE_DATA_WIDTH + x;
 				data[index + 0] = Math.random() * 2 - 1;
 				data[index + 1] = Math.random() * 2 - 1;
-				data[index + 2] = Math.random() * 2 - 1;
 
 				data[index + 4] = 0;//Math.random() * 2 - 1;
 				data[index + 5] = 0;//Math.random() * 2 - 1;
-				data[index + 6] = 0;//Math.random() * 2 - 1;
 			}
 		}
 		return createDataTexture(PARTICLE_DATA_WIDTH, PARTICLE_DATA_HEIGHT, data);
@@ -249,11 +233,11 @@
 			data.push(
 				x + Math.random() * 0.04 - 0.02,
 				y + Math.random() * 0.04 - 0.02,
-				z + Math.random() * 0.02 - 0.01,
-				Math.random() * 10,
+				0,
+				0,
 				vx + Math.random() * 2 - 1,
 				vy + Math.random() * 2 - 1,
-				vz + Math.random() * 2 - 1,
+				0,
 				0
 			);
 
@@ -347,7 +331,6 @@
 		console.error(err);
 	});
 
-	window.dump = function () {
-		requestedDump = true;
-	};
+	window.play = play;
+	window.pause = pause;
 })();
