@@ -1,0 +1,45 @@
+
+*,
+*:before,
+*:after {
+	box-sizing: inherit;
+}
+
+html {
+	box-sizing: border-box;
+
+	user-select: none;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+
+	font: 16px "Helvetica Neue", Helvetica, Arial, sans-serif;
+	color: #fff;
+}
+
+canvas {
+	display: block;
+}
+
+.params {
+	position: fixed;
+	top: 20px;
+	left: 20px;
+	padding: 10px;
+
+	background-color: rgba(0, 0, 0, 0.5);
+}
+
+.params label,
+.params input,
+.params select {
+	vertical-align: middle;
+}
+
+.params label {
+	display: block;
+	margin-bottom: 3px;
+}

@@ -7,6 +7,25 @@
 	</head>
 	<body>
 		<canvas></canvas>
+		<div class="params">
+			<label>
+				Restrict to visible area:
+				<input type="checkbox" id="restrict" checked />
+			</label>
+			<label>
+				Particle count:
+				<select id="particle-count">
+					<option value="4096">4K</option>
+					<option value="16384">16K</option>
+					<option value="65536">66K</option>
+					<option value="262144" selected>262K</option>
+					<option value="1048576">1M</option>
+					<option value="4194304">4.2M</option>
+					<option value="16556761">16.6M</option>
+				</select>
+			</label>
+			<button id="apply">Apply</button>
+		</div>
 		<script src="js/AssetLoader.js"></script>
 		<script src="js/main.js"></script>
 	</body>

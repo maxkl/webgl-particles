@@ -5,6 +5,6 @@ attribute vec2 vertexPosition;
 varying vec2 coord;
 
 void main() {
-	coord = (vertexPosition + 1.0) / 2.0;
-	gl_Position = vec4(vertexPosition, 1.0, 1.0);
+	coord = vertexPosition * 0.5 + 0.5;
+	gl_Position = vec4(vertexPosition, 0.0, 1.0);
 }

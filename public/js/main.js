@@ -1,40 +1,46 @@
 (function () {
 	'use strict';
 
+	var $restrictInput = document.querySelector('#restrict');
+	var $particleCountInput = document.querySelector('#particle-count');
+	var $applyBtn = document.querySelector('#apply');
 	var canvas = document.querySelector('canvas');
 	var gl = canvas.getContext('webgl');
 
 	var lastTimestamp;
 	var animFrame;
 
+	var initialized = false;
+
+	var keys = {};
+	var playing = false;
+
 	var width, height;
 
 	var assetLoader = new AssetLoader();
 
-	var PARTICLE_COUNT = 1024 * 1024;
-	var PARTICLE_COUNT_SQRT = Math.sqrt(PARTICLE_COUNT);
-	var PARTICLE_DATA_SLOTS = 2;
-	var PARTICLE_DATA_WIDTH = PARTICLE_COUNT_SQRT * PARTICLE_DATA_SLOTS;
-	var PARTICLE_DATA_HEIGHT = PARTICLE_COUNT_SQRT;
-
-	var emitIndex = 0;
+	var particleCount, particleCountSqrt;
 
 	var physicsProgram, copyProgram, renderProgram;
 	var viewportBuffer, dataLocationBuffer;
 	var framebuffer;
 	var physicsInputTexture, physicsOutputTexture;
 
+	var targetX = 0, targetY = 0;
+
 	function updateParticles() {
+		gl.viewport(0, 0, particleCountSqrt, particleCountSqrt);
+
 		// Update particles
 		gl.useProgram(physicsProgram.glProgram);
-
-		gl.viewport(0, 0, PARTICLE_DATA_WIDTH, PARTICLE_DATA_HEIGHT);
 
 		gl.bindBuffer(gl.ARRAY_BUFFER, viewportBuffer);
 		gl.vertexAttribPointer(physicsProgram.attribs.vertexPosition, 2, gl.FLOAT, false, 0, 0);
 		gl.enableVertexAttribArray(physicsProgram.attribs.vertexPosition);
 
-		gl.uniform2f(physicsProgram.uniforms.bounds, PARTICLE_DATA_WIDTH, PARTICLE_DATA_HEIGHT);
+		gl.uniform2f(physicsProgram.uniforms.bounds, particleCountSqrt, particleCountSqrt);
+
+		gl.uniform2f(physicsProgram.uniforms.target, targetX, targetY);
 
 		gl.activeTexture(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, physicsInputTexture);
@@ -49,8 +55,6 @@
 
 		// Copy particle data from physicsOutputTexture to physicsInputTexture
 		gl.useProgram(copyProgram.glProgram);
-
-		gl.viewport(0, 0, PARTICLE_DATA_WIDTH, PARTICLE_DATA_HEIGHT);
 
 		gl.bindBuffer(gl.ARRAY_BUFFER, viewportBuffer);
 		gl.vertexAttribPointer(copyProgram.attribs.vertexPosition, 2, gl.FLOAT, false, 0, 0);
@@ -71,15 +75,12 @@
 	function draw(timestamp) {
 		animFrame = requestAnimationFrame(draw);
 
-		var deltaTime = lastTimestamp ? (timestamp - lastTimestamp) * 0.001 : 0;
-		lastTimestamp = timestamp;
-
 		updateParticles();
 
-		gl.useProgram(renderProgram.glProgram);
-
-		gl.clear(gl.COLOR_BUFFER_BIT);
 		gl.viewport(0, 0, width, height);
+		gl.clear(gl.COLOR_BUFFER_BIT);
+		
+		gl.useProgram(renderProgram.glProgram);
 
 		gl.bindBuffer(gl.ARRAY_BUFFER, dataLocationBuffer);
 		gl.vertexAttribPointer(renderProgram.attribs.dataLocation, 2, gl.FLOAT, false, 0, 0);
@@ -89,25 +90,26 @@
 		gl.bindTexture(gl.TEXTURE_2D, physicsOutputTexture);
 		gl.uniform1i(renderProgram.uniforms.physicsData, 0);
 
-		gl.drawArrays(gl.POINTS, 0, PARTICLE_COUNT);
+		gl.drawArrays(gl.POINTS, 0, particleCount);
 	}
 
 	function resize() {
-		var size = 400;
-		width = size;
-		height = size;
+		width = window.innerWidth;
+		height = window.innerHeight;
 		canvas.width = width;
 		canvas.height = height;
 	}
 
 	function play() {
-		if(!animFrame) {
+		if(!playing) {
+			playing = true;
 			lastTimestamp = 0;
 			animFrame = requestAnimationFrame(draw);
 		}
 	}
 
 	function pause() {
+		playing = false;
 		cancelAnimationFrame(animFrame);
 		animFrame = null;
 	}
@@ -123,8 +125,15 @@
 		return tex;
 	}
 
-	function compileShader(type, source) {
+	function compileShader(type, source, macros) {
 		var shader = gl.createShader(type);
+		var macrosSource = '';
+		if(macros) {
+			for(var i = 0; i < macros.length; i++) {
+				macrosSource += '#define ' + macros[i] + '\n';
+			}
+		}
+		source = macrosSource + source;
 		gl.shaderSource(shader, source);
 		gl.compileShader(shader);
 		if(!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
@@ -153,48 +162,50 @@
 		return attribs;
 	}
 
-	function compileProgram(vertexShaderSource, fragmentShaderSource) {
+	function compileProgram(vertexShaderSource, fragmentShaderSource, macros) {
 		var program = gl.createProgram();
-		var vertexShader = compileShader(gl.VERTEX_SHADER, vertexShaderSource);
-		var fragmentShader = compileShader(gl.FRAGMENT_SHADER, fragmentShaderSource);
+		var vertexShader = compileShader(gl.VERTEX_SHADER, vertexShaderSource, macros);
+		var fragmentShader = compileShader(gl.FRAGMENT_SHADER, fragmentShaderSource, macros);
 		gl.attachShader(program, vertexShader);
 		gl.attachShader(program, fragmentShader);
 		gl.linkProgram(program);
 		if(!gl.getProgramParameter(program, gl.LINK_STATUS)) {
 			throw new Error(gl.getProgramInfoLog(program));
 		}
+		gl.deleteShader(vertexShader);
+		gl.deleteShader(fragmentShader);
 		return program;
 	}
 
-	function Program(vertexShaderSource, fragmentShaderSource) {
-		this.glProgram = compileProgram(vertexShaderSource, fragmentShaderSource);
+	function Program(vertexShaderSource, fragmentShaderSource, macros) {
+		this.glProgram = compileProgram(vertexShaderSource, fragmentShaderSource, macros);
 		this.uniforms = getUniforms(this.glProgram);
 		this.attribs = getAttributes(this.glProgram);
 	}
 
 	function createPhysicsDataTexture() {
-		var size = 4 * PARTICLE_COUNT * PARTICLE_DATA_SLOTS;
+		var size = 4 * particleCount;
 		var data = new Float32Array(size);
-		return createDataTexture(PARTICLE_DATA_WIDTH, PARTICLE_DATA_HEIGHT, data);
+		return createDataTexture(particleCountSqrt, particleCountSqrt, data);
 	}
 
 	function createRandomPhysicsDataTexture() {
-		var size = 4 * PARTICLE_COUNT * PARTICLE_DATA_SLOTS;
+		var size = 4 * particleCount;
 		var data = new Float32Array(size);
-		for(var y = 0; y < PARTICLE_DATA_HEIGHT; y++) {
-			for(var x = 0; x < PARTICLE_DATA_WIDTH; x += PARTICLE_DATA_SLOTS) {
-				var index = y * PARTICLE_DATA_WIDTH + x;
+		for(var y = 0; y < particleCountSqrt; y++) {
+			for(var x = 0; x < particleCountSqrt; x++) {
+				var index = y * particleCountSqrt + x;
 				data[index + 0] = Math.random() * 2 - 1;
 				data[index + 1] = Math.random() * 2 - 1;
-
-				data[index + 4] = 0;//Math.random() * 2 - 1;
-				data[index + 5] = 0;//Math.random() * 2 - 1;
+				data[index + 2] = Math.random() * 2 - 1;
+				data[index + 3] = Math.random() * 2 - 1;
 			}
 		}
-		return createDataTexture(PARTICLE_DATA_WIDTH, PARTICLE_DATA_HEIGHT, data);
+		return createDataTexture(particleCountSqrt, particleCountSqrt, data);
 	}
 
 	function createViewportBuffer() {
+		// Clip-space coordinates
 		var data = new Float32Array([
 			-1, -1,
 			1, -1,
@@ -208,13 +219,13 @@
 	}
 
 	function createDataLocationBuffer() {
-		var data = new Float32Array(PARTICLE_COUNT * 2);
-		var step = 1 / PARTICLE_COUNT_SQRT;
-		for(var i = 0; i < PARTICLE_COUNT; i++) {
+		var data = new Float32Array(particleCount * 2);
+		var step = 1 / particleCountSqrt;
+		for(var i = 0; i < particleCount; i++) {
 			var uIndex = i * 2;
 			var vIndex = uIndex + 1;
-			data[uIndex] = step * Math.floor(i % PARTICLE_COUNT_SQRT);
-			data[vIndex] = step * Math.floor(i / PARTICLE_COUNT_SQRT);
+			data[uIndex] = step * Math.floor(i % particleCountSqrt);
+			data[vIndex] = step * Math.floor(i / particleCountSqrt);
 		}
 		var buffer = gl.createBuffer();
 		gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -222,70 +233,95 @@
 		return buffer;
 	}
 
-	function addParticles(count, x, y, z, vx, vy, vz) {
-		gl.bindTexture(gl.TEXTURE_2D, physicsInputTexture);
-		var startIndexX = Math.floor((emitIndex * PARTICLE_DATA_SLOTS) % PARTICLE_DATA_WIDTH);
-		var startIndexY = Math.floor(emitIndex / PARTICLE_DATA_HEIGHT);
-		var indexX = startIndexX;
-		var indexY = startIndexY;
-		var data = [];
-		for(var i = 0; i < count; i++) {
-			data.push(
-				x + Math.random() * 0.04 - 0.02,
-				y + Math.random() * 0.04 - 0.02,
-				0,
-				0,
-				vx + Math.random() * 2 - 1,
-				vy + Math.random() * 2 - 1,
-				0,
-				0
-			);
+	function deinit() {
+		gl.deleteProgram(physicsProgram.glProgram);
+		gl.deleteProgram(copyProgram.glProgram);
+		gl.deleteProgram(renderProgram.glProgram);
 
-			indexX += PARTICLE_DATA_SLOTS;
-			if(indexX >= PARTICLE_DATA_WIDTH) {
-				gl.texSubImage2D(
-					gl.TEXTURE_2D, 0,
-					startIndexX, startIndexY, indexX - startIndexX, 1,
-					gl.RGBA, gl.FLOAT, new Float32Array(data)
-				);
-				data.length = 0;
-				indexX = 0;
-				indexY++;
-				if(indexY >= PARTICLE_DATA_HEIGHT) {
-					indexY = 0;
+		gl.deleteBuffer(viewportBuffer);
+		gl.deleteBuffer(dataLocationBuffer);
+
+		gl.deleteFramebuffer(framebuffer);
+
+		gl.deleteTexture(physicsInputTexture);
+		gl.deleteTexture(physicsOutputTexture);
+	}
+
+	function addEventListeners() {
+		window.addEventListener('resize', resize);
+
+		window.addEventListener('keydown', function (evt) {
+			var keyCode = evt.which;
+			if(!keys[keyCode]) {
+				keys[keyCode] = true;
+
+				switch(keyCode) {
+					case 80: // P
+						if(playing) {
+							pause();
+						} else {
+							play();
+						}
+						break;
 				}
-				startIndexX = indexX;
-				startIndexY = indexY;
 			}
-		}
-		if(indexX > startIndexX) {
-			gl.texSubImage2D(
-				gl.TEXTURE_2D, 0,
-				startIndexX, startIndexY, indexX - startIndexX, 1,
-				gl.RGBA, gl.FLOAT, new Float32Array(data)
-			);
-		}
-		emitIndex += count;
-		emitIndex %= PARTICLE_COUNT;
-	};
+		});
+
+		window.addEventListener('keyup', function (evt) {
+			var keyCode = evt.which;
+			if(keys[keyCode]) {
+				keys[keyCode] = false;
+			}
+		});
+
+		canvas.addEventListener('mousemove', function (evt) {
+			evt.preventDefault();
+
+			var rect = canvas.getBoundingClientRect();
+			var x = evt.clientX - rect.left;
+			var y = evt.clientY - rect.top;
+			if(x >= 0 && x <= rect.width && y >= 0 && y <= rect.height) {
+				targetX = (x / rect.width) * 2 - 1;
+				targetY = -(y / rect.height) * 2 + 1;
+			}
+		});
+
+		$applyBtn.addEventListener('click', function () {
+			init();
+		});
+	}
 
 	function init() {
+		if(initialized) {
+			deinit();
+		}
+
+		particleCount = +$particleCountInput.value;
+		particleCountSqrt = Math.sqrt(particleCount);
+
+		var macros = [];
+		if($restrictInput.checked) {
+			macros.push('RESTRICT_POSITION');
+		}
+
 		resize();
-		window.addEventListener('resize', resize);
 
 		physicsProgram = new Program(
 			assetLoader.assets['physics.vert'],
-			assetLoader.assets['physics.frag']
+			assetLoader.assets['physics.frag'],
+			macros
 		);
 
 		copyProgram = new Program(
 			assetLoader.assets['copy.vert'],
-			assetLoader.assets['copy.frag']
+			assetLoader.assets['copy.frag'],
+			macros
 		);
 
 		renderProgram = new Program(
 			assetLoader.assets['render.vert'],
-			assetLoader.assets['render.frag']
+			assetLoader.assets['render.frag'],
+			macros
 		);
 
 		viewportBuffer = createViewportBuffer();
@@ -296,15 +332,11 @@
 
 		gl.clearColor(0, 0, 0, 1);
 
-		/*addParticles(
-			1000,
-			10,//Math.random() * 2 - 1,
-			Math.random() * 2 - 1,
-			0,
-			0,
-			0,
-			0
-		);*/
+		if(!initialized) {
+			addEventListeners();
+		}
+
+		initialized = true;
 	}
 
 	if(!gl) {
@@ -330,7 +362,4 @@
 	}).catch(function (err) {
 		console.error(err);
 	});
-
-	window.play = play;
-	window.pause = pause;
 })();
