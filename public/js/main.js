@@ -26,7 +26,7 @@
 	var framebuffer;
 	var physicsInputTexture, physicsOutputTexture;
 
-	var targetX = 0, targetY = 0;
+	var targetX, targetY;
 
 	function updateParticles() {
 		gl.viewport(0, 0, particleCountSqrt, particleCountSqrt);
@@ -277,12 +277,14 @@
 		canvas.addEventListener('mousemove', function (evt) {
 			evt.preventDefault();
 
-			var rect = canvas.getBoundingClientRect();
-			var x = evt.clientX - rect.left;
-			var y = evt.clientY - rect.top;
-			if(x >= 0 && x <= rect.width && y >= 0 && y <= rect.height) {
-				targetX = (x / rect.width) * 2 - 1;
-				targetY = -(y / rect.height) * 2 + 1;
+			if(playing) {
+				var rect = canvas.getBoundingClientRect();
+				var x = evt.clientX - rect.left;
+				var y = evt.clientY - rect.top;
+				if(x >= 0 && x <= rect.width && y >= 0 && y <= rect.height) {
+					targetX = (x / rect.width) * 2 - 1;
+					targetY = -(y / rect.height) * 2 + 1;
+				}
 			}
 		});
 
@@ -305,6 +307,9 @@
 		}
 
 		resize();
+
+		targetX = 0;
+		targetY = 0;
 
 		physicsProgram = new Program(
 			assetLoader.assets['physics.vert'],
